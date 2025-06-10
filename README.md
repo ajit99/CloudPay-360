@@ -45,7 +45,7 @@ Docker (optional): For containerization.
 Installation
 
 Clone the repository:
-git clone https://github.com/your-username/cloudpay360.git
+git clone https://github.com/ajit99/CloudPay-360
 cd cloudpay360
 
 
