@@ -1,0 +1,139 @@
+1. Database Overview
+
+    Primary Database: PostgreSQL (relational database for structured, transactional data).
+    Secondary Storage: Redis (in-memory store for caching, session management, and real-time analytics).
+    Purpose:
+        Store user and merchant data.
+        Track payment transactions and their statuses.
+        Log fraud detection events and analytics data.
+        Support dashboard reporting.
+
+2. PostgreSQL Schema Design
+
+Below is a detailed schema with tables, columns, and relationships. Each table includes a primary key (PK), foreign keys (FK), and indexes for performance.
+Table 1: users
+
+Stores information about users (e.g., merchants or customers).
+
+    user_id (PK, UUID): Unique identifier for each user.
+    email (VARCHAR, UNIQUE): User's email address.
+    password_hash (VARCHAR): Hashed password for security.
+    name (VARCHAR): User's full name.
+    role (ENUM: 'merchant', 'customer', 'admin'): User type.
+    created_at (TIMESTAMP): Account creation timestamp.
+    updated_at (TIMESTAMP): Last update timestamp.
+    Indexes:
+        Index on email for fast lookups.
+        Index on role for filtering by user type.
+
+Table 2: merchants
+
+Stores merchant-specific details (linked to users).
+
+    merchant_id (PK, UUID): Unique identifier for each merchant.
+    user_id (FK, UUID): References users(user_id).
+    business_name (VARCHAR): Merchant's business name.
+    api_key (VARCHAR, UNIQUE): API key for secure integration.
+    currency (VARCHAR): Preferred currency (e.g., USD, INR).
+    created_at (TIMESTAMP): Record creation timestamp.
+    Indexes:
+        Index on user_id for joins.
+        Index on api_key for authentication lookups.
+
+Table 3: payments
+
+Stores payment transaction details.
+
+    payment_id (PK, UUID): Unique identifier for each payment.
+    user_id (FK, UUID): References users(user_id).
+    merchant_id (FK, UUID): References merchants(merchant_id).
+    amount (DECIMAL): Payment amount.
+    currency (VARCHAR): Currency of the transaction.
+    status (ENUM: 'pending', 'success', 'failed', 'refunded'): Payment status.
+    payment_method (VARCHAR): Method used (e.g., UPI, credit card).
+    transaction_id (VARCHAR, UNIQUE): External transaction ID.
+    created_at (TIMESTAMP): Transaction timestamp.
+    updated_at (TIMESTAMP): Last update timestamp.
+    Indexes:
+        Index on user_id and merchant_id for filtering.
+        Index on status for status-based queries.
+        Index on created_at for time-based analytics.
+
+Table 4: fraud_logs
+
+Stores fraud detection events (linked to payments).
+
+    fraud_log_id (PK, UUID): Unique identifier for each log.
+    payment_id (FK, UUID): References payments(payment_id).
+    risk_score (FLOAT): Fraud risk score (0 to 100).
+    is_fraudulent (BOOLEAN): Whether the transaction was flagged as fraudulent.
+    details (TEXT): Additional details (e.g., reason for flagging).
+    created_at (TIMESTAMP): Log timestamp.
+    Indexes:
+        Index on payment_id for joins.
+        Index on is_fraudulent for filtering fraudulent transactions.
+        Index on created_at for time-based queries.
+
+Table 5: analytics
+
+Stores aggregated data for dashboard reporting (e.g., daily transaction summaries).
+
+    analytics_id (PK, UUID): Unique identifier for each record.
+    merchant_id (FK, UUID): References merchants(merchant_id).
+    date (DATE): Date of the summary.
+    total_transactions (INTEGER): Number of transactions.
+    total_amount (DECIMAL): Total transaction amount.
+    success_rate (FLOAT): Percentage of successful transactions.
+    fraud_attempts (INTEGER): Number of fraud attempts detected.
+    Indexes:
+        Index on merchant_id and date for efficient querying.
+        Index on success_rate for sorting.
+
+3. Redis Usage
+
+Redis is used for caching and real-time operations to complement PostgreSQL.
+
+    Session Management:
+        Key: session:<user_id> (e.g., session:uuid123)
+        Value: JSON string with session data (e.g., { "token": "abc", "expires_at": "2025-06-10T21:00:00Z" })
+        TTL: 24 hours
+    Caching:
+        Key: merchant:<merchant_id>:profile (e.g., merchant:uuid456:profile)
+        Value: JSON string of merchant data (e.g., { "business_name": "ShopEasy", "currency": "USD" })
+        TTL: 1 hour
+    Real-Time Analytics:
+        Key: stats:<merchant_id>:<date> (e.g., stats:uuid456:2025-06-10)
+        Value: Hash with fields like total_transactions, total_amount, fraud_attempts.
+        Usage: Increment counters in real-time for dashboard updates.
+        TTL: 1 day (after which data is aggregated into PostgreSQL analytics table).
+
+4. Relationships and Constraints
+
+    Foreign Keys:
+        merchants.user_id → users.user_id (ON DELETE CASCADE)
+        payments.user_id → users.user_id (ON DELETE SET NULL)
+        payments.merchant_id → merchants.merchant_id (ON DELETE SET NULL)
+        fraud_logs.payment_id → payments.payment_id (ON DELETE CASCADE)
+        analytics.merchant_id → merchants.merchant_id (ON DELETE CASCADE)
+    Constraints:
+        users.email and merchants.api_key are UNIQUE.
+        payments.amount must be non-negative.
+        fraud_logs.risk_score must be between 0 and 100.
+
+5. Example Queries
+
+    Fetch Recent Payments for a Merchant:
+    sql
+
+SELECT p.payment_id, p.amount, p.status, p.created_at
+FROM payments p
+JOIN merchants m ON p.merchant_id = m.merchant_id
+WHERE m.merchant_id = 'uuid456'
+ORDER BY p.created_at DESC
+LIMIT 10;
+Get Fraud Statistics for a Date Range:
+sql
+SELECT COUNT(*) as fraud_count, AVG(risk_score) as avg_risk
+FROM fraud_logs
+WHERE created_at BETWEEN '2025-06-01' AND '2025-06-10'
+AND is_fraudulent = TRUE;
